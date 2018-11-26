@@ -1,48 +1,93 @@
 import xlrd
 import jieba
+import gensim
+import nltk
+import pdb
 import numpy as np
-from gensim.models.doc2vec import Doc2Vec, TaggedDocument
-import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
+from sklearn.feature_extraction.text import TfidfVectorizer as TFIDF
+from gensim.models.doc2vec import Doc2Vec, TaggedDocument
+from nltk.tokenize import sent_tokenize, word_tokenize
 
-data = xlrd.open_workbook(r'./P0087_VIN  1000 list-Warranty_claims.xlsx')
-table_cause = data.sheet_by_name('OpenText')
-comments_cause_list = []
-comments_comments_list = []
-comments_correction_list = []
-#data processing .........
-for i in range(1,300):
-    comments_cause = table_cause.cell_value(i,10)
-    comments_comments = table_cause.cell_value(i,11)
-    comments_correction = table_cause.cell_value(i,13) 
-    if len(comments_cause) != 0:
-        comments_cause = comments_cause.lower().split(' ')
-        if len(comments_cause) > 4:
-            comments_cause = comments_cause[4:]
-            if comments_cause[0][0] == 'T':
-                comments_cause_list.append(comments_cause[1:])
-            else:
-                comments_cause_list.append(comments_cause)
-        else:
-            comments_cause_list.append(comments_cause)
-    if len(comments_comments) != 0:
-        comments_comments_list.append(comments_comments)
-    if len(comments_correction) != 0:
-        comments_correction_list.append(comments_correction)
-# model building and training ........
-documents = [TaggedDocument(doc, [i]) for i, doc in enumerate(comments_cause_list)]
-model = Doc2Vec(documents, vector_size=6, window=2, min_count=0, workers=4)
-# model testing after training ......
-vector_list = []
-vector_to_idx = {}
-for item in comments_cause_list:
-    vector = model.infer_vector(item)
-    vector_list.append(vector)
-    #vector_to_idx['_'.join(vector)] = item
-# implementing K-means...
-X = np.array(vector_list)
-kmeans = KMeans(n_clusters = 10, random_state = 0).fit(X)
-#for item in X:
-for i in range(len(kmeans.labels_)):
-    print(kmeans.labels_[i], ' '.join(comments_cause_list[i]))
-print('done')
+
+class NLPModel(object):
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def fileReader(self):
+        self.data = xlrd.open_workbook(self.file_path)
+        self.table_cause = self.data.sheet_by_name('OpenText')
+        self.cause_list = []
+        self.comment_list = []
+        self.correction_list = []
+        # loop the excel to get all data
+        for i in range(1,381):
+            self.cause = self.table_cause.cell_value(i,10)
+            self.comment = self.table_cause.cell_value(i,11)
+            self.correction = self.table_cause.cell_value(i,13)
+            if self.text2Token(self.cause): 
+                self.cause_list.append(self.text2Token(self.cause))
+            if self.text2Token(self.comment):
+                self.comment_list.append(self.text2Token(self.comment))
+            if self.text2Token(self.correction):
+                self.correction_list.append(self.text2Token(self.correction))
+        return self.cause_list, self.comment_list, self.comment_list
+
+    def text2Token(self, text):
+        token_list = []
+        sent_tok = sent_tokenize(text)
+        for sent in sent_tok:
+            if word_tokenize(sent) != []:
+                token_list += word_tokenize(sent)
+        return token_list
+    
+    def wordCollector(self, text_list):
+        word_dict = {}
+        for sentence in text_list:
+            for word in sentence:
+                if word not in word_dict:
+                    word_dict[word] = 1
+                else:
+                    word_dict[word] += 1
+        return word_dict
+
+    def wor2vecEmbedding(self,text_list):
+        print('embedding word by using google pretrained model ... ')
+        model = gensim.models.KeyedVectors.load_word2vec_format('./GoogleNews-vectors-negative300.bin', binary=True, unicode_errors='ignore')
+        print('complete load google pretrain model !!!')
+        word2vec_dict = {}
+        for word, vector in zip(model.vocab, model.vectors):
+            word2vec_dict[word] = vector
+        vector_list = []
+        idx = 0
+        for sentence in text_list:
+            vector = 0
+            for word in sentence:
+                try:
+                    vector += np.array(word2vec_dict[word])
+                except KeyError:
+                    continue
+            vector_list.append((vector/len(sentence)).tolist())
+        return vector_list
+
+    def TFIDFEmbedding(self, text_list):
+        print('embedding word by using TFIDF mdoel ... ')
+        tfidf_word = TFIDF(min_df = 0,max_features=None,strip_accents='unicode',analyzer='word',ngram_range=(1,3),use_idf=1,smooth_idf=1,sublinear_tf=False,stop_words='english')
+        tfidf_char = TFIDF(min_df = 0,max_features=None,strip_accents='unicode',analyzer='word',ngram_range=(1,3),use_idf=1,smooth_idf=1,sublinear_tf=False,stop_words='english')
+        tfidf_word.fit(text_list)
+
+        vector_list = tfidf.transform(text_list)
+        return vector_list
+    
+    def KMeansClustering(self, vector_list):
+        kmeans = KMeans(n_clusters = 10, random_state = 0).fit(vector_list)
+        for i in range(len(kmeans.labels_)):
+            print(kmeans.labels_[i], ' '.join(self.cause_list[i]))
+        print('done')
+
+if __name__ == '__main__':
+    input_path = './P0087_VIN_1000_list-Warranty_claims.xlsx'
+    warranty_data = NLPModel(input_path)
+    cause_list, comment_list, correction_list = warranty_data.fileReader()
+    vector_list = warranty_data.wor2vecEmbedding(cause_list)
+    warranty_data.KMeansClustering(vector_list)

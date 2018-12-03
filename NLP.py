@@ -55,6 +55,24 @@ class NLPModel(object):
         print('embedding word by using google pretrained model ... ')
         model = gensim.models.KeyedVectors.load_word2vec_format('./GoogleNews-vectors-negative300.bin', binary=True, unicode_errors='ignore')
         print('complete load google pretrain model !!!')
+        print('checking word2vec embedding performance ...')
+        print('fuel:')
+        word_list = model.most_similar('fuel',topn=10)
+        for item in word_list:
+            print(item[0], item[1])
+        print('pressure: ')
+        word_list = model.most_similar('pressure',topn=10)
+        for item in word_list:
+            print(item[0], item[1])
+        print('tank: ')
+        word_list = model.most_similar('tank',topn=10)
+        for item in word_list:
+            print(item[0], item[1])
+        print('brake: ')
+        word_list = model.most_similar('brake',topn=10)
+        for item in word_list:
+            print(item[0], item[1]) 
+        exit()
         word2vec_dict = {}
         for word, vector in zip(model.vocab, model.vectors):
             word2vec_dict[word] = vector
@@ -72,22 +90,32 @@ class NLPModel(object):
 
     def TFIDFEmbedding(self, text_list):
         print('embedding word by using TFIDF mdoel ... ')
-        tfidf_word = TFIDF(min_df = 0,max_features=None,strip_accents='unicode',analyzer='word',ngram_range=(1,3),use_idf=1,smooth_idf=1,sublinear_tf=False,stop_words='english')
+        train_data = []
+        for item in text_list:
+            train_data.append(''.join(item))
+        tfidf_word = TFIDF(min_df = 0,max_features=None,analyzer='word',ngram_range=(1,3),use_idf=1,smooth_idf=1,sublinear_tf=False,stop_words='english')
         tfidf_char = TFIDF(min_df = 0,max_features=None,strip_accents='unicode',analyzer='word',ngram_range=(1,3),use_idf=1,smooth_idf=1,sublinear_tf=False,stop_words='english')
-        tfidf_word.fit(text_list)
+        tfidf_word.fit(train_data)
 
-        vector_list = tfidf.transform(text_list)
+        vector_list = tfidf_word.transform(train_data)
         return vector_list
     
     def KMeansClustering(self, vector_list):
-        kmeans = KMeans(n_clusters = 10, random_state = 0).fit(vector_list)
+        kmeans = KMeans(n_clusters = 5, random_state = 0).fit(vector_list)
+        res = []
         for i in range(len(kmeans.labels_)):
-            print(kmeans.labels_[i], ' '.join(self.cause_list[i]))
+            res.append((kmeans.labels_[i], ' '.join(self.cause_list[i]))) 
+            #print(kmeans.labels_[i], ' '.join(vector_list[i]))
+            new_res = sorted(res, key=lambda x: x[0])
+        for item in new_res:
+            print(item)
         print('done')
 
 if __name__ == '__main__':
     input_path = './P0087_VIN_1000_list-Warranty_claims.xlsx'
     warranty_data = NLPModel(input_path)
     cause_list, comment_list, correction_list = warranty_data.fileReader()
+    #vector_list = warranty_data.TFIDFEmbedding(cause_list)
     vector_list = warranty_data.wor2vecEmbedding(cause_list)
-    warranty_data.KMeansClustering(vector_list)
+    #vector_list = warranty_data.wor2vecEmbedding(comment_list)
+    #warranty_data.KMeansClustering(vector_list)
